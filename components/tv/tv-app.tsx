@@ -15,6 +15,7 @@ import { FixtureList } from './fixture-list'
 import { ChannelList } from './channel-list'
 import { MediaPlayer } from './media-player'
 import { EpgGuide } from './epg-guide'
+import { TvStage } from './tv-stage'
 
 type Zone = 'tabs' | 'fixtures' | 'channels' | 'player' | 'epg'
 type View = 'fixtures' | 'channels'
@@ -111,7 +112,8 @@ export function TvApp() {
   }, [zapChannel])
 
   return (
-    <div className="flex h-dvh min-h-[600px] flex-col overflow-hidden bg-background">
+    <TvStage>
+    <div className="flex h-full flex-col overflow-hidden bg-background">
       <TopBar
         activeLeague={leagueId}
         now={now}
@@ -166,5 +168,6 @@ export function TvApp() {
         </div>
       </main>
     </div>
+    </TvStage>
   )
 }
