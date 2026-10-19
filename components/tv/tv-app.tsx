@@ -2,52 +2,98 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNow } from '@/hooks/use-now'
-import { channels, getChannelsByLeague, getLeague, getSchedule, type LeagueId } from '@/lib/tv-data'
+import {
+  channels,
+  getFixture,
+  getFixtureSchedule,
+  getFixturesByLeague,
+  getLeague,
+  type LeagueId,
+} from '@/lib/tv-data'
 import { TopBar } from './top-bar'
+import { FixtureList } from './fixture-list'
 import { ChannelList } from './channel-list'
 import { MediaPlayer } from './media-player'
 import { EpgGuide } from './epg-guide'
 
-type Zone = 'tabs' | 'channels' | 'player' | 'epg'
+type Zone = 'tabs' | 'fixtures' | 'channels' | 'player' | 'epg'
+type View = 'fixtures' | 'channels'
 
 const zoneSelectors: Record<Zone, string> = {
   tabs: '[data-zone="tabs"] [aria-selected="true"]',
-  channels: '[data-zone="channels"] [data-playing="true"]',
+  fixtures: '[data-zone="fixtures"] [data-active="true"], [data-zone="fixtures"] li:first-child button',
+  channels: '[data-zone="channels"] [data-playing="true"], [data-zone="channels"] li:first-child button',
   player: '[data-zone="player"]',
   epg: '[data-zone="epg"] [data-now="true"]',
 }
 
 function focusZone(zone: Zone) {
-  document.querySelector<HTMLElement>(zoneSelectors[zone])?.focus()
+  requestAnimationFrame(() => document.querySelector<HTMLElement>(zoneSelectors[zone])?.focus())
 }
+
+const initialFixture = getFixture('pl-fx-0')
 
 export function TvApp() {
   const now = useNow()
   const [leagueId, setLeagueId] = useState<LeagueId>('pl')
-  const [playingId, setPlayingId] = useState(() => getChannelsByLeague('pl')[0].id)
+  const [view, setView] = useState<View>('fixtures')
+  const [openFixtureId, setOpenFixtureId] = useState(initialFixture.id)
+  const [playingFixtureId, setPlayingFixtureId] = useState(initialFixture.id)
+  const [playingId, setPlayingId] = useState(initialFixture.broadcasts[0].channelId)
   const playerRef = useRef<HTMLDivElement>(null)
 
   const league = getLeague(leagueId)
-  const leagueChannels = useMemo(() => getChannelsByLeague(leagueId), [leagueId])
-  const playing = channels.find((c) => c.id === playingId) ?? leagueChannels[0]
-  const schedule = useMemo(() => (now ? getSchedule(playing, now) : []), [playing, now])
+  const leagueFixtures = useMemo(() => getFixturesByLeague(leagueId, now), [leagueId, now])
+  const openFixture = getFixture(openFixtureId)
+  const playingFixture = getFixture(playingFixtureId)
+  const playing = channels.find((c) => c.id === playingId) ?? channels[0]
+  const playingLeague = getLeague(playing.leagueId)
+  const schedule = useMemo(
+    () => (now ? getFixtureSchedule(playingFixture, playing, now) : []),
+    [playingFixture, playing, now],
+  )
+
+  const leftZone: Zone = view === 'fixtures' ? 'fixtures' : 'channels'
 
   const selectLeague = useCallback((id: LeagueId) => {
     setLeagueId(id)
-    setPlayingId(getChannelsByLeague(id)[0].id)
+    setView('fixtures')
   }, [])
+
+  const openFixtureChannels = useCallback((id: string) => {
+    const fixture = getFixture(id)
+    setOpenFixtureId(id)
+    setPlayingFixtureId(id)
+    setPlayingId(fixture.broadcasts[0].channelId)
+    setView('channels')
+    focusZone('channels')
+  }, [])
+
+  const backToFixtures = useCallback(() => {
+    setView('fixtures')
+    focusZone('fixtures')
+  }, [])
+
+  const playChannel = useCallback(
+    (id: string) => {
+      setPlayingFixtureId(openFixtureId)
+      setPlayingId(id)
+    },
+    [openFixtureId],
+  )
 
   const zapChannel = useCallback(
     (delta: number) => {
-      const index = leagueChannels.findIndex((c) => c.id === playingId)
-      const next = (index + delta + leagueChannels.length) % leagueChannels.length
-      setPlayingId(leagueChannels[next].id)
+      const list = playingFixture.broadcasts
+      const index = list.findIndex((b) => b.channelId === playingId)
+      const next = (index + delta + list.length) % list.length
+      setPlayingId(list[next].channelId)
     },
-    [leagueChannels, playingId],
+    [playingFixture, playingId],
   )
 
   useEffect(() => {
-    focusZone('channels')
+    focusZone('fixtures')
   }, [])
 
   useEffect(() => {
@@ -70,28 +116,42 @@ export function TvApp() {
         activeLeague={leagueId}
         now={now}
         onSelectLeague={selectLeague}
-        onExitDown={() => focusZone('channels')}
+        onExitDown={() => focusZone(leftZone)}
       />
 
-      <main className="grid min-h-0 flex-1 grid-cols-[minmax(340px,30%)_1fr] gap-6 px-10 pb-8">
-        <ChannelList
-          league={league}
-          channels={leagueChannels}
-          playingId={playing.id}
-          now={now}
-          onSelect={setPlayingId}
-          onExitUp={() => focusZone('tabs')}
-          onExitRight={() => playerRef.current?.focus()}
-        />
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(360px,30%)_1fr] gap-6 px-10 pb-8">
+        {view === 'fixtures' ? (
+          <FixtureList
+            key={leagueId}
+            league={league}
+            fixtures={leagueFixtures}
+            playingFixtureId={playingFixtureId}
+            now={now}
+            onOpen={openFixtureChannels}
+            onExitUp={() => focusZone('tabs')}
+            onExitRight={() => playerRef.current?.focus()}
+          />
+        ) : (
+          <ChannelList
+            key={openFixture.id}
+            fixture={openFixture}
+            playingId={playingFixtureId === openFixture.id ? playing.id : ''}
+            now={now}
+            onSelect={playChannel}
+            onBack={backToFixtures}
+            onExitUp={() => focusZone('tabs')}
+            onExitRight={() => playerRef.current?.focus()}
+          />
+        )}
 
         <div className="flex min-h-0 min-w-0 flex-col gap-5">
           <MediaPlayer
             ref={playerRef}
             channel={playing}
-            league={league}
+            league={playingLeague}
             program={schedule[0] ?? null}
             now={now}
-            onExitLeft={() => focusZone('channels')}
+            onExitLeft={() => focusZone(leftZone)}
             onExitDown={() => focusZone('epg')}
             onExitUp={() => focusZone('tabs')}
           />
@@ -100,7 +160,7 @@ export function TvApp() {
             channel={playing}
             programs={schedule}
             now={now}
-            onExitLeft={() => focusZone('channels')}
+            onExitLeft={() => focusZone(leftZone)}
             onExitUp={() => playerRef.current?.focus()}
           />
         </div>
