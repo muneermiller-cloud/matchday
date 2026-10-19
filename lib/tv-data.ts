@@ -171,6 +171,210 @@ export function getSchedule(channel: Channel, now: number, count = 7): Program[]
   return all.slice(currentIndex, currentIndex + count)
 }
 
+const MIN = 60 * 1000
+
+export type FixtureStatus = 'LIVE' | 'UPCOMING' | 'FT'
+
+export type Broadcast = {
+  channelId: string
+  feed: string
+}
+
+export type Fixture = {
+  id: string
+  leagueId: LeagueId
+  home: string
+  away: string
+  venue: string
+  round: string
+  kickoffOffset: number
+  broadcasts: Broadcast[]
+}
+
+const kickoffOffsets = [-50, 25, -20, 120, -170, 240]
+
+const rounds: Record<LeagueId, string> = {
+  pl: 'Matchweek 9',
+  laliga: 'Jornada 10',
+  ucl: 'League Phase · MD3',
+}
+
+const feedLabels = [
+  'Main Feed · English',
+  'Spanish Commentary',
+  'Arabic Commentary',
+  'Tactical Cam',
+]
+
+const fixtureList: Fixture[] = (Object.keys(fixtures) as LeagueId[]).flatMap((leagueId) => {
+  const leagueChannels = channels.filter((c) => c.leagueId === leagueId)
+  return fixtures[leagueId].map(([home, away, venue], i) => {
+    const count = Math.min(leagueChannels.length, 2 + (i % 3))
+    return {
+      id: `${leagueId}-fx-${i}`,
+      leagueId,
+      home,
+      away,
+      venue,
+      round: rounds[leagueId],
+      kickoffOffset: kickoffOffsets[i % kickoffOffsets.length] * MIN,
+      broadcasts: Array.from({ length: count }, (_, k) => ({
+        channelId: leagueChannels[(i * 2 + k) % leagueChannels.length].id,
+        feed: feedLabels[k % feedLabels.length],
+      })),
+    }
+  })
+})
+
+// Kick-off times are anchored once per session so live minutes don't jump while browsing.
+let sessionAnchor: number | null = null
+function anchorOf(now: number) {
+  if (sessionAnchor === null) sessionAnchor = Math.floor(now / (15 * MIN)) * 15 * MIN
+  return sessionAnchor
+}
+
+export function kickoffOf(fixture: Fixture, now: number) {
+  return anchorOf(now) + fixture.kickoffOffset
+}
+
+export function getFixturesByLeague(leagueId: LeagueId, now: number | null) {
+  const list = fixtureList.filter((f) => f.leagueId === leagueId)
+  if (!now) return list
+  const rank: Record<FixtureStatus, number> = { LIVE: 0, UPCOMING: 1, FT: 2 }
+  return [...list].sort((a, b) => {
+    const diff = rank[fixtureStatus(a, now)] - rank[fixtureStatus(b, now)]
+    return diff !== 0 ? diff : a.kickoffOffset - b.kickoffOffset
+  })
+}
+
+export const allFixtures = fixtureList
+
+export function getLiveFixtures(now: number | null) {
+  if (!now) return []
+  return fixtureList.filter((f) => fixtureStatus(f, now) === 'LIVE')
+}
+
+function seedOf(id: string) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 9973
+  return h
+}
+
+export function getMatchStats(fixture: Fixture, minute: number) {
+  const s = seedOf(fixture.id)
+  const p = Math.min(1, minute / 90)
+  const possession = 38 + (s % 25)
+  return [
+    { label: 'Possession', home: possession, away: 100 - possession, unit: '%' },
+    { label: 'Shots', home: Math.round((6 + (s % 9)) * p), away: Math.round((4 + ((s >> 2) % 8)) * p) },
+    { label: 'On target', home: Math.round((2 + (s % 5)) * p), away: Math.round((1 + ((s >> 3) % 5)) * p) },
+    { label: 'Corners', home: Math.round((2 + ((s >> 1) % 6)) * p), away: Math.round((1 + ((s >> 4) % 6)) * p) },
+    { label: 'Fouls', home: Math.round((5 + ((s >> 2) % 7)) * p), away: Math.round((6 + ((s >> 5) % 6)) * p) },
+  ]
+}
+
+export function getFixture(id: string) {
+  return fixtureList.find((f) => f.id === id) ?? fixtureList[0]
+}
+
+export function fixtureStatus(fixture: Fixture, now: number): FixtureStatus {
+  const kickoff = kickoffOf(fixture, now)
+  if (now < kickoff) return 'UPCOMING'
+  if (now < kickoff + 105 * MIN) return 'LIVE'
+  return 'FT'
+}
+
+function matchProgram(fixture: Fixture, now: number): Program {
+  const kickoff = kickoffOf(fixture, now)
+  return {
+    id: `${fixture.id}-match`,
+    kind: 'LIVE',
+    title: `${fixture.home} vs ${fixture.away}`,
+    subtitle: `Live from ${fixture.venue}`,
+    start: kickoff - 15 * MIN,
+    end: kickoff + 105 * MIN,
+    home: fixture.home,
+    away: fixture.away,
+  }
+}
+
+export function getFixtureScore(fixture: Fixture, now: number) {
+  const status = fixtureStatus(fixture, now)
+  if (status === 'UPCOMING') return null
+  const match = matchProgram(fixture, now)
+  return getLiveScore(match, status === 'FT' ? match.end : now)
+}
+
+export function getFixtureSchedule(fixture: Fixture, channel: Channel, now: number, count = 7): Program[] {
+  const showSet = shows[fixture.leagueId]
+  const match = matchProgram(fixture, now)
+  const status = fixtureStatus(fixture, now)
+  const pick = (list: string[], n: number) => list[(n + channel.seed) % list.length]
+
+  const items: Program[] = [
+    {
+      id: `${fixture.id}-${channel.id}-pre`,
+      kind: 'ANALYSIS',
+      title: pick(showSet.analysis, 0),
+      subtitle: `Build-up to ${fixture.home} vs ${fixture.away}`,
+      start: match.start - 60 * MIN,
+      end: match.start,
+    },
+    { ...match, id: `${match.id}-${channel.id}` },
+    {
+      id: `${fixture.id}-${channel.id}-post`,
+      kind: 'HIGHLIGHTS',
+      title: 'Full-Time Reaction',
+      subtitle: `Every goal from ${fixture.home} vs ${fixture.away}`,
+      start: match.end,
+      end: match.end + 30 * MIN,
+    },
+  ]
+
+  if (status === 'FT') {
+    const last = items[items.length - 1]
+    items.push({
+      id: `${fixture.id}-${channel.id}-replay`,
+      kind: 'REPLAY',
+      title: match.title,
+      subtitle: `Full match replay · ${fixture.venue}`,
+      start: last.end,
+      end: last.end + 120 * MIN,
+      home: fixture.home,
+      away: fixture.away,
+    })
+  }
+
+  for (let n = 1; n <= count; n++) {
+    const last = items[items.length - 1]
+    const analysis = n % 2 === 1
+    items.push({
+      id: `${fixture.id}-${channel.id}-after-${n}`,
+      kind: analysis ? 'ANALYSIS' : 'HIGHLIGHTS',
+      title: pick(analysis ? showSet.analysis : showSet.highlights, n),
+      subtitle: analysis ? 'Studio analysis & expert panel' : 'Every goal, save and big moment',
+      start: last.end,
+      end: last.end + (analysis ? 60 : 30) * MIN,
+    })
+  }
+
+  let n = 0
+  while (items[0].start > now) {
+    const first = items[0]
+    n++
+    items.unshift({
+      id: `${fixture.id}-${channel.id}-before-${n}`,
+      kind: 'HIGHLIGHTS',
+      title: pick(showSet.highlights, n),
+      subtitle: 'Every goal, save and big moment',
+      start: first.start - 60 * MIN,
+      end: first.start,
+    })
+  }
+
+  return items.filter((p) => p.end > now).slice(0, count)
+}
+
 export function teamCode(team: string) {
   return team.replace(/[^A-Za-zÀ-ÿ ]/g, '').replace(/\s+/g, '').slice(0, 3).toUpperCase()
 }

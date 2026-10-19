@@ -1,61 +1,117 @@
 'use client'
 
 import { useRef } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getSchedule, progressOf, type Channel, type League } from '@/lib/tv-data'
+import {
+  channels as allChannels,
+  fixtureStatus,
+  getFixtureScore,
+  teamCode,
+  type Fixture,
+} from '@/lib/tv-data'
 
 type ChannelListProps = {
-  league: League
-  channels: Channel[]
+  fixture: Fixture
   playingId: string
   now: number | null
   onSelect: (id: string) => void
+  onBack: () => void
   onExitUp: () => void
   onExitRight: () => void
 }
 
-export function ChannelList({
-  league,
-  channels,
-  playingId,
-  now,
-  onSelect,
-  onExitUp,
-  onExitRight,
-}: ChannelListProps) {
+const backKeys = new Set(['ArrowLeft', 'Escape', 'Backspace', 'GoBack', 'BrowserBack'])
+
+export function ChannelList({ fixture, playingId, now, onSelect, onBack, onExitUp, onExitRight }: ChannelListProps) {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const backRef = useRef<HTMLButtonElement>(null)
+  const status = now ? fixtureStatus(fixture, now) : null
+  const score = now ? getFixtureScore(fixture, now) : null
+  const broadcasts = fixture.broadcasts.map((b) => ({
+    ...b,
+    channel: allChannels.find((c) => c.id === b.channelId)!,
+  }))
 
   function handleKeyDown(event: React.KeyboardEvent, index: number) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      itemRefs.current[Math.min(channels.length - 1, index + 1)]?.focus()
+      itemRefs.current[Math.min(broadcasts.length - 1, index + 1)]?.focus()
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      if (index === 0) onExitUp()
+      if (index === 0) backRef.current?.focus()
       else itemRefs.current[index - 1]?.focus()
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
       onExitRight()
+    } else if (backKeys.has(event.key)) {
+      event.preventDefault()
+      onBack()
+    }
+  }
+
+  function handleBackKeyDown(event: React.KeyboardEvent) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      itemRefs.current[0]?.focus()
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      onExitUp()
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      onExitRight()
+    } else if (backKeys.has(event.key)) {
+      event.preventDefault()
+      onBack()
     }
   }
 
   return (
-    <section aria-labelledby="channels-heading" className="flex min-h-0 flex-col rounded-3xl border border-border bg-card">
-      <div className="flex items-end justify-between px-6 pt-5 pb-4">
-        <div>
-          <p className="text-xs font-bold tracking-[0.25em] text-primary uppercase">{league.fullName}</p>
+    <section
+      aria-labelledby="channels-heading"
+      className="flex min-h-0 flex-col rounded-3xl border border-border bg-card animate-in fade-in slide-in-from-right-4 duration-300"
+    >
+      <div className="flex flex-col gap-4 px-6 pt-5 pb-4">
+        <button
+          ref={backRef}
+          type="button"
+          onClick={onBack}
+          onKeyDown={handleBackKeyDown}
+          className="flex w-fit items-center gap-2 rounded-lg px-2 py-1 -ml-2 text-xs font-black tracking-[0.2em] text-muted-foreground uppercase outline-none transition-colors hover:text-foreground focus-visible:bg-primary focus-visible:text-primary-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Fixtures
+        </button>
+
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-background/60 px-4 py-3">
+          <TeamBadge team={fixture.home} />
+          <div className="flex flex-col items-center">
+            <span className="font-display text-3xl font-black tabular-nums">
+              {score ? `${score.homeGoals} - ${score.awayGoals}` : 'VS'}
+            </span>
+            <span
+              className={cn(
+                'text-[11px] font-black tracking-wider',
+                status === 'LIVE' ? 'text-live' : 'text-muted-foreground',
+              )}
+            >
+              {status === 'LIVE' ? `LIVE ${score?.label !== 'PRE' ? score?.label : ''}` : status === 'FT' ? 'FULL TIME' : 'UPCOMING'}
+            </span>
+          </div>
+          <TeamBadge team={fixture.away} />
+        </div>
+
+        <div className="flex items-end justify-between">
           <h2 id="channels-heading" className="font-display text-3xl font-black tracking-wide">
             CHANNELS
           </h2>
+          <p className="font-display text-lg font-bold text-muted-foreground">{broadcasts.length}</p>
         </div>
-        <p className="font-display text-lg font-bold text-muted-foreground">{channels.length}</p>
       </div>
 
       <ul data-zone="channels" className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3 [scrollbar-width:none]">
-        {channels.map((channel, index) => {
+        {broadcasts.map(({ channel, feed }, index) => {
           const playing = channel.id === playingId
-          const current = now ? getSchedule(channel, now, 1)[0] : null
-          const isLive = current?.kind === 'LIVE'
           return (
             <li key={channel.id}>
               <button
@@ -70,7 +126,7 @@ export function ChannelList({
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
                 className={cn(
                   'group flex w-full items-center gap-4 rounded-2xl border-2 px-3 py-3 text-left transition-all outline-none',
-                  'focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary',
+                  'focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary focus-visible:shadow-[0_0_36px_-12px_var(--primary)]',
                   'hover:bg-secondary',
                   playing ? 'border-transparent bg-secondary' : 'border-transparent',
                 )}
@@ -94,19 +150,13 @@ export function ChannelList({
                     </span>
                   </span>
                   <span className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                    {isLive && (
+                    {status === 'LIVE' && (
                       <span className="flex shrink-0 items-center gap-1 text-[11px] font-black tracking-wider text-live">
                         <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden="true" />
                         LIVE
                       </span>
                     )}
-                    <span className="truncate">{current?.title ?? '\u00a0'}</span>
-                  </span>
-                  <span className="h-1 w-full overflow-hidden rounded-full bg-background" aria-hidden="true">
-                    <span
-                      className={cn('block h-full rounded-full', playing ? 'bg-primary' : 'bg-muted-foreground/60')}
-                      style={{ width: `${current && now ? progressOf(current, now) : 0}%` }}
-                    />
+                    <span className="truncate">{feed}</span>
                   </span>
                 </span>
                 {playing && (
@@ -122,5 +172,16 @@ export function ChannelList({
         })}
       </ul>
     </section>
+  )
+}
+
+function TeamBadge({ team }: { team: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+      <span className="flex size-11 items-center justify-center rounded-xl bg-muted font-display text-sm font-black tracking-wide">
+        {teamCode(team)}
+      </span>
+      <span className="w-full truncate text-center text-sm font-extrabold">{team}</span>
+    </div>
   )
 }

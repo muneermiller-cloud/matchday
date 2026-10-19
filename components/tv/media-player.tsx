@@ -22,10 +22,11 @@ type MediaPlayerProps = {
   onExitLeft: () => void
   onExitDown: () => void
   onExitUp: () => void
+  onEnterFullscreen: () => void
 }
 
 export const MediaPlayer = forwardRef<HTMLDivElement, MediaPlayerProps>(function MediaPlayer(
-  { channel, league, program, now, onExitLeft, onExitDown, onExitUp },
+  { channel, league, program, now, onExitLeft, onExitDown, onExitUp, onEnterFullscreen },
   ref,
 ) {
   const [paused, setPaused] = useState(false)
@@ -51,6 +52,9 @@ export const MediaPlayer = forwardRef<HTMLDivElement, MediaPlayerProps>(function
         onExitUp()
         break
       case 'Enter':
+        event.preventDefault()
+        onEnterFullscreen()
+        break
       case ' ':
       case 'MediaPlayPause':
         event.preventDefault()
@@ -69,8 +73,9 @@ export const MediaPlayer = forwardRef<HTMLDivElement, MediaPlayerProps>(function
       aria-label={`Player: ${channel.name}`}
       tabIndex={0}
       data-zone="player"
+      data-league={league.id}
       onKeyDown={handleKeyDown}
-      className="group relative min-h-0 flex-1 overflow-hidden rounded-3xl border-2 border-border bg-black outline-none transition-colors focus-visible:border-primary"
+      className="group relative min-h-0 flex-1 overflow-hidden rounded-3xl border-2 border-border bg-black outline-none transition-all focus-visible:border-primary focus-visible:shadow-[0_0_48px_-12px_var(--primary)]"
     >
       <Image
         key={channel.id}
@@ -102,6 +107,9 @@ export const MediaPlayer = forwardRef<HTMLDivElement, MediaPlayerProps>(function
         </div>
 
         <div className="flex items-center gap-2">
+          <span className="rounded-lg bg-primary px-3 py-1.5 text-sm font-black tracking-wider text-primary-foreground opacity-0 transition-opacity group-focus-visible:opacity-100">
+            OK · FULL SCREEN
+          </span>
           {isLive && (
             <span className="flex items-center gap-1.5 rounded-lg bg-live px-3 py-1.5 text-sm font-black tracking-wider text-white">
               <span className="size-2 animate-pulse rounded-full bg-white" aria-hidden="true" />
@@ -164,10 +172,7 @@ export const MediaPlayer = forwardRef<HTMLDivElement, MediaPlayerProps>(function
             <ControlButton label="Subtitles" active={captions} onClick={() => setCaptions((c) => !c)}>
               <Captions className="size-5" />
             </ControlButton>
-            <ControlButton
-              label="Fullscreen"
-              onClick={(e) => e.currentTarget.closest<HTMLElement>('[data-zone="player"]')?.requestFullscreen?.()}
-            >
+            <ControlButton label="Full screen" onClick={onEnterFullscreen}>
               <Maximize className="size-5" />
             </ControlButton>
           </div>
