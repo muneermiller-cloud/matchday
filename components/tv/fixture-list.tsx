@@ -94,7 +94,7 @@ export function FixtureList({
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
                 className={cn(
                   'group flex w-full flex-col gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition-all outline-none',
-                  'hover:bg-secondary focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary',
+                  'hover:bg-secondary focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary focus-visible:shadow-[0_0_36px_-12px_var(--primary)]',
                   active ? 'border-transparent bg-secondary' : 'border-transparent bg-background/40',
                 )}
               >

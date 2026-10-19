@@ -247,6 +247,32 @@ export function getFixturesByLeague(leagueId: LeagueId, now: number | null) {
   })
 }
 
+export const allFixtures = fixtureList
+
+export function getLiveFixtures(now: number | null) {
+  if (!now) return []
+  return fixtureList.filter((f) => fixtureStatus(f, now) === 'LIVE')
+}
+
+function seedOf(id: string) {
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 9973
+  return h
+}
+
+export function getMatchStats(fixture: Fixture, minute: number) {
+  const s = seedOf(fixture.id)
+  const p = Math.min(1, minute / 90)
+  const possession = 38 + (s % 25)
+  return [
+    { label: 'Possession', home: possession, away: 100 - possession, unit: '%' },
+    { label: 'Shots', home: Math.round((6 + (s % 9)) * p), away: Math.round((4 + ((s >> 2) % 8)) * p) },
+    { label: 'On target', home: Math.round((2 + (s % 5)) * p), away: Math.round((1 + ((s >> 3) % 5)) * p) },
+    { label: 'Corners', home: Math.round((2 + ((s >> 1) % 6)) * p), away: Math.round((1 + ((s >> 4) % 6)) * p) },
+    { label: 'Fouls', home: Math.round((5 + ((s >> 2) % 7)) * p), away: Math.round((6 + ((s >> 5) % 6)) * p) },
+  ]
+}
+
 export function getFixture(id: string) {
   return fixtureList.find((f) => f.id === id) ?? fixtureList[0]
 }

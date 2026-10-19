@@ -126,7 +126,7 @@ export function ChannelList({ fixture, playingId, now, onSelect, onBack, onExitU
                 onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'nearest' })}
                 className={cn(
                   'group flex w-full items-center gap-4 rounded-2xl border-2 px-3 py-3 text-left transition-all outline-none',
-                  'focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary',
+                  'focus-visible:scale-[1.02] focus-visible:border-primary focus-visible:bg-secondary focus-visible:shadow-[0_0_36px_-12px_var(--primary)]',
                   'hover:bg-secondary',
                   playing ? 'border-transparent bg-secondary' : 'border-transparent',
                 )}
